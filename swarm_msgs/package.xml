@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>swarm_msgs</name>
+  <version>1.1.0</version>
+  <description>The swarm_msgs package</description>
+
+  <maintainer email="ye@iquotient-robotics.com">Ye Tian</maintainer>
+
+  <license>MIT</license>
+
+  <url type="website">https://github.com/I-Quotient-Robotics/caster</url>
+  <url type="repository">https://github.com/I-Quotient-Robotics/caster</url>
+  <url type="bugtracker">https://github.com/I-Quotient-Robotics/caster/issues</url>
+
+  <author email="ye@iquotient-robotics.com">Ye Tian</author>
+
+  <build_depend>roslaunch</build_depend>
+  <buildtool_depend>catkin</buildtool_depend>
+ 
+  <depend>message_runtime</depend> 
+  <depend>message_generation</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+
+  <export>
+  </export>
+</package>

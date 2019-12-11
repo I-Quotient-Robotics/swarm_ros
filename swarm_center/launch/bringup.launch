@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="log_type" default="screen"/>
+
+  <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch" > 
+     <arg name="port" value="9090"/>
+  </include>
+
+  <node pkg="swarm_center" type="swarm_center.py" name="swarm_center_node" output="$(arg log_type)">
+  </node>
+</launch>
