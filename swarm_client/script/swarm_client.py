@@ -12,12 +12,25 @@ from move_base_msgs.msg import MoveBaseGoal, MoveBaseFeedback, MoveBaseAction
 
 class SwarmClient():
     def __init__(self):
+        # base robot ip and port
+        self.__base_port = 9090
+        self.__base_ip = '127.0.0.1'
+
+        self.__robot_name = "robot_1"
         self.__current_command = "dismiss"
+
+        # follow position
+        self.__follow_translation = (-1.0, -1.0, 0.0)
+        self.__follow_rotation = (0.0, 0.0, 0.0, 1.0)
+
+        # cover position
+        self.__cover_translation = (1.0, 0.0, 0.0)
+        self.__cover_rotation = (0.0, 0.0, 0.0, 1.0)
 
         self.__tf_listener = tf.TransformListener()
         self.__tf_broadcaster = tf.TransformBroadcaster()
 
-        self.__ros_client = roslibpy.Ros('127.0.0.1', 9090)
+        self.__ros_client = roslibpy.Ros(self.__base_port, self.__base_ip)
 
         self.__swarm_command = roslibpy.Topic(self.__ros_client, 'swarm_command', 'std_msgs/String')
         self.__swarm_heartbeat = roslibpy.Topic(self.__ros_client, 'swarm_hearbeat', 'swarm_msgs/SwarmHeartbeat')
@@ -41,32 +54,38 @@ class SwarmClient():
         # publish swarm_base robot tf on map
         translation = (message['pose']['position']['x'], message['pose']['position']['y'], message['pose']['position']['z'])
         rotation = (message['pose']['orientation']['x'], message['pose']['orientation']['y'], message['pose']['orientation']['z'], message['pose']['orientation']['w'])
-        dock_tf_broadcaster.sendTransform(  translation,
+        self.__tf_broadcaster.sendTransform(translation,
                                             rotation,
                                             rospy.Time.now(),
                                             "swarm_base", "map")
 
-        # follow pose, based on base-robot pose
+        # publish follow pose tf
+        self.__tf_broadcaster.sendTransform(self.__follow_translation,
+                                            self.__follow_rotation,
+                                            rospy.Time.now(),
+                                            "swarm_follow", "swarm_base")
+
+        # pbulish cover pose tf
+        self.__tf_broadcaster.sendTransform(self.__cover_translation,
+                                            self.__cover_rotation,
+                                            rospy.Time.now(),
+                                            "swarm_cover", "swarm_base")
+
         relative_pose = PoseStamped()
         relative_pose.header.stamp = rospy.Time.now()
-        relative_pose.header.frame_id = "swarm_base"
-        relative_pose.pose.position.x = -1.0
-        relative_pose.pose.position.y = -1.0
-        relative_pose.pose.position.z = 0.0
+        if(self.__current_command=="follow"):
+            relative_pose.header.frame_id = "swarm_base"
+        else if(self.__current_command=="cover"):
+            relative_pose.header.frame_id = "swarm_cover"
 
-        # get follow pose, based on map frame
+        # get pose, based on map frame
         try:
             target_pose = self.__tf_listener.transformPose("map", relative_pose)
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
-            self.__dock_ready_pose_2.pose.position.z = -1.0
             rospy.logwarn("tf 1error, %s" % e)
 
         # send new goal to movebase action server
-        if(self.__current_command == "follow"):
-            mb_goal = MoveBaseGoal()
-            mb_goal.target_pose = target_pose
-            # self.__movebase_client.send_goal(mb_goal)
-        else if(self.__current_command == "cover"):
+        if(self.__current_command != "dismiss"):
             mb_goal = MoveBaseGoal()
             mb_goal.target_pose = target_pose
             # self.__movebase_client.send_goal(mb_goal)
@@ -77,10 +96,10 @@ class SwarmClient():
         rate = rospy.Rate(1)
         while self.__ros_client.is_connected:
             heartbeat_msg = {}
-            heartbeat_msg['name'] = 'robot_1'
-            heartbeat_msg['state'] = 'alone'
+            heartbeat_msg['name'] = self.__robot_name
+            heartbeat_msg['state'] = self.__current_command
             try:
-                (trans, orient) = self.__tf_listener.lookupTransform("/map", "/base_link", rospy.Time(0))
+                (trans, orient) = self.__tf_listener.lookupTransform("map", "base_link", rospy.Time(0))
                 pose_msg = {}
                 pose_msg['position'] = {'x':trans[0], 'y':trans[1], 'z':trans[2]}
                 pose_msg['orientation'] = {'x':orient[0], 'y':orient[1], 'z':orient[2], 'w':orient[3]}

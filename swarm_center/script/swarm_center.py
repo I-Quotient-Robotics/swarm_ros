@@ -5,7 +5,7 @@ import tf
 import rospy
 
 from std_msgs.msg import String
-from geometry_msgs.msg import Pose, Twist, PoseStamped, PoseWithCovarianceStamped
+from geometry_msgs.msg import Pose, PoseStamped
 
 from swarm_msgs.srv import SetCommand, SetCommandResponse
 
