@@ -2,61 +2,116 @@
 
 import time
 import rospy
+import tf
 import roslibpy
 
 from actionlib import SimpleActionClient
-from actionlib.action_server import ActionServer
 
-from geometry_msgs.msg import Pose, Twist, PoseStamped
+from geometry_msgs.msg import Pose, PoseStamped
+from move_base_msgs.msg import MoveBaseGoal, MoveBaseFeedback, MoveBaseAction
 
-ros_client = roslibpy.Ros('127.0.0.1', 9090)
+class SwarmClient():
+    def __init__(self):
+        self.__current_command = "dismiss"
 
-swarm_pose = roslibpy.Topic(ros_client, 'swarm_pose', 'swarm_msgs/SwarmPose')
-swarm_command = roslibpy.Topic(ros_client, 'swarm_command', 'swarm_msgs/SwarmCommand')
-swarm_heartbeat = roslibpy.Topic(ros_client, 'swarm_hearbeat', 'swarm_msgs/SwarmHeartbeat')
-swarm_base_pose = roslibpy.Topic(ros_client, 'swarm_base_pose', 'swarm_msgs/SwarmPose')
+        self.__tf_listener = tf.TransformListener()
+        self.__tf_broadcaster = tf.TransformBroadcaster()
 
-def command_callback(message):
-    rospy.loginfo("command_callback get data")
-# 
-def base_pose_callback(message):
-    rospy.loginfo("base_pose_callback get data")
+        self.__ros_client = roslibpy.Ros('127.0.0.1', 9090)
 
-def start_sending():
-    rospy.loginfo('start sending')
-    while True:
-        if not ros_client.is_connected:
-            break
-        # swarm_pose.publish(roslibpy.Message({'command': 'hello world'}))
+        self.__swarm_command = roslibpy.Topic(self.__ros_client, 'swarm_command', 'std_msgs/String')
+        self.__swarm_heartbeat = roslibpy.Topic(self.__ros_client, 'swarm_hearbeat', 'swarm_msgs/SwarmHeartbeat')
+        self.__swarm_base_pose = roslibpy.Topic(self.__ros_client, 'swarm_base_pose', 'geometry_msgs/PoseStamped')
 
-        heartbeat_msg = {}
-        heartbeat_msg['name'] = 'robot_1'
-        heartbeat_msg['state'] = 'alone'
-        pose_msg = {}
-        pose_msg['position'] = {'x':1.0, 'y':2.0, 'z':3.0}
-        pose_msg['orientation'] = {'x':1.0, 'y':2.0, 'z':3.0, 'w':4.0}
-        heartbeat_msg['pose'] = pose_msg
-        swarm_heartbeat.publish(roslibpy.Message(heartbeat_msg))
-        time.sleep(1)
+        self.__movebase_client = SimpleActionClient('move_base', MoveBaseAction)
+        rospy.loginfo("wait for movebase server...")
+        self.__movebase_client.wait_for_server()
+        rospy.loginfo("movebase server connected")
 
-def start_receiving():
-    rospy.loginfo('start receiving')
-    swarm_command.subscribe(command_callback)
-    swarm_base_pose.subscribe(base_pose_callback)
+        self.__ros_client.on_ready(self.__start_sending, run_in_thread=True)
+        self.__ros_client.on_ready(self.__start_receiving, run_in_thread=True)
+
+    def __command_callback(self, message):
+        rospy.loginfo("command_callback get data: %s", message['data'])
+        self.__current_command = message['data']
+
+    def __base_pose_callback(self, message):
+        rospy.loginfo("base_pose_callback get data")
+
+        # publish swarm_base robot tf on map
+        translation = (message['pose']['position']['x'], message['pose']['position']['y'], message['pose']['position']['z'])
+        rotation = (message['pose']['orientation']['x'], message['pose']['orientation']['y'], message['pose']['orientation']['z'], message['pose']['orientation']['w'])
+        dock_tf_broadcaster.sendTransform(  translation,
+                                            rotation,
+                                            rospy.Time.now(),
+                                            "swarm_base", "map")
+
+        # follow pose, based on base-robot pose
+        relative_pose = PoseStamped()
+        relative_pose.header.stamp = rospy.Time.now()
+        relative_pose.header.frame_id = "swarm_base"
+        relative_pose.pose.position.x = -1.0
+        relative_pose.pose.position.y = -1.0
+        relative_pose.pose.position.z = 0.0
+
+        # get follow pose, based on map frame
+        try:
+            target_pose = self.__tf_listener.transformPose("map", relative_pose)
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
+            self.__dock_ready_pose_2.pose.position.z = -1.0
+            rospy.logwarn("tf 1error, %s" % e)
+
+        # send new goal to movebase action server
+        if(self.__current_command == "follow"):
+            mb_goal = MoveBaseGoal()
+            mb_goal.target_pose = target_pose
+            # self.__movebase_client.send_goal(mb_goal)
+        else if(self.__current_command == "cover"):
+            mb_goal = MoveBaseGoal()
+            mb_goal.target_pose = target_pose
+            # self.__movebase_client.send_goal(mb_goal)
+
+    def __start_sending(self):
+        rospy.loginfo('start sending')
+
+        rate = rospy.Rate(1)
+        while self.__ros_client.is_connected:
+            heartbeat_msg = {}
+            heartbeat_msg['name'] = 'robot_1'
+            heartbeat_msg['state'] = 'alone'
+            try:
+                (trans, orient) = self.__tf_listener.lookupTransform("/map", "/base_link", rospy.Time(0))
+                pose_msg = {}
+                pose_msg['position'] = {'x':trans[0], 'y':trans[1], 'z':trans[2]}
+                pose_msg['orientation'] = {'x':orient[0], 'y':orient[1], 'z':orient[2], 'w':orient[3]}
+                heartbeat_msg['pose'] = pose_msg
+                self.__swarm_heartbeat.publish(roslibpy.Message(heartbeat_msg))
+            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
+                rospy.logwarn("tf 1error, %s" % e)
+            rate.sleep()
+
+    def __start_receiving(self):
+        rospy.loginfo('start receiving')
+        self.__swarm_command.subscribe(self.__command_callback)
+        self.__swarm_base_pose.subscribe(self.__base_pose_callback)
+
+    def run(self):
+        self.__ros_client.run()
+
+    def close(self):
+        self.__swarm_command.unsubscribe()
+        self.__swarm_base_pose.unadvertise()
+        self.__ros_client.call_later(2, self.__ros_client.terminate)
 
 def main():
     rospy.init_node("swarm_client")
 
-    ros_client.on_ready(start_receiving, run_in_thread=True)
-    ros_client.on_ready(start_sending, run_in_thread=True)
+    swarm_client = SwarmClient()
 
-    # ros_client.run_forever()
     while not rospy.is_shutdown():
-        ros_client.run()
+        swarm_client.run()
 
-    swarm_command.unsubscribe()
-    swarm_base_pose.unadvertise()
-    ros_client.call_later(2, ros_client.terminate)
+    swarm_client.close()
 
     rospy.loginfo("shutdown....ok")
 
