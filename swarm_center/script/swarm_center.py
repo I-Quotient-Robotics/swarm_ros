@@ -29,7 +29,7 @@ def main():
     base_pose = PoseStamped()
     base_pose.header.frame_id = "base_link"
 
-    rate = rospy.Rate(1)
+    rate = rospy.Rate(0.5)
     while not rospy.is_shutdown():
 
         pose = PoseStamped()
