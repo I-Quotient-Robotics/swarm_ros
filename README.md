@@ -40,7 +40,7 @@ ROS package for robot swarm
     
 3. 执行`catkin_make`完成编译
 
-4. 参照[群控程序设置](README#群控程序设置)，设置主机器人IP，以及从机队形位置
+4. 参照[群控程序设置](README.md#群控程序设置)，设置主机器人IP，以及从机队形位置
 
 ## 群控程序设置
 
