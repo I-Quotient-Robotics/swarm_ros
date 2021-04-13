@@ -15,7 +15,7 @@ ROS package for robot swarm
 2. 执行如下指令安装ROS依赖
 
     ```bash
-    sudo apt install ros-kinetic-rosbridge-suite
+    sudo apt install ros-${ROS_DISTRO}-rosbridge-suite
     ```
 
 3. 执行`catkin_make`完成编译
@@ -35,9 +35,9 @@ ROS package for robot swarm
 2. 执行如下指令安装依赖
 
     ```bash
-    sudo apt intstall ros-kinetic-rosbridge-suite
+    sudo apt install ros-${ROS_DISTRO}-rosbridge-suite
     sudo apt install python-pip
-    sudo pip2 install roslibpy
+    sudo -H pip2 install roslibpy
     ```
     
 3. 执行`catkin_make`完成编译

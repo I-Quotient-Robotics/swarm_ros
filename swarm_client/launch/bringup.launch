@@ -2,6 +2,11 @@
 <launch>
   <arg name="log_type" default="screen"/>
 
+  <rosparam command="load" file="$(find swarm_client)/config/swarm_trans.yaml" />
   <node pkg="swarm_client" type="swarm_client.py" name="swarm_client_node" output="$(arg log_type)">
+    <param name="base_port" type="int" value="9090" />
+    <param name="base_address" type="string" value="192.168.31.16" />
+    <param name="robot_name" type="string" value="scout-mini-02" />
+    <param name="robot_frame_id" type="string" value="base_footprint" />
   </node>
 </launch>
