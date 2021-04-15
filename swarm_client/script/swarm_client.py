@@ -24,17 +24,31 @@ class SwarmClient():
         self.__load_swarm_trans()
         self.__current_command = 'dismiss'
 
+        self.__tf_listener = tf.TransformListener()
+
         self.__ros_client = roslibpy.Ros(self.__base_ip, self.__base_port)
 
         self.__swarm_command = roslibpy.Topic(self.__ros_client, 'swarm_command', 'swarm_msgs/SwarmCommand')
         self.__swarm_heartbeat = roslibpy.Topic(self.__ros_client, 'swarm_hearbeat', 'swarm_msgs/SwarmHeartbeat')
 
+        # self.__move_base_pub = rospy.Publisher('swarm_goal', PoseStamped, queue_size=30)
         self.__move_base_pub = rospy.Publisher('move_base_simple/goal', PoseStamped, queue_size=30)
+
+        self.__target_pose = PoseStamped()
+        self.__swarm_base_pose = Pose()
 
         self.__ros_client.on_ready(self.__start_sending, run_in_thread=True)
         self.__ros_client.on_ready(self.__start_receiving, run_in_thread=True)
 
+        self.__ros_client.run()
+
         rospy.loginfo('Swarm client started')
+    
+    def target_pose(self):
+        return self.__target_pose
+
+    def swarm_base_pose(self):
+        return self.__swarm_base_pose
 
     def __load_swarm_trans(self):
         type_list = rospy.get_param('swarm_trans')
@@ -43,30 +57,31 @@ class SwarmClient():
         for name in type_list:
             data = rospy.get_param('swarm_trans/'+name)
             self.__swarm_trans[name] = PyKDL.Frame(PyKDL.Rotation.RPY(data[3], data[4], data[5]), PyKDL.Vector(data[0], data[1], data[2]))
-            # rospy.loginfo(data)
 
         rospy.loginfo("get %d swarm type: %s", len(type_list), type_list)
 
     def __command_callback(self, message):
-        # rospy.loginfo('base_pose_callback get data')
+        if not self.__swarm_trans.has_key(message['command']):
+            if message['command'] != 'dismiss':
+                rospy.logwarn('unknown command type %s', message['command'])
+                return
 
         self.__current_command = message['command']
 
-        if(self.__current_command != 'dismiss'):
-            swarm_base_pose = Pose()
-            swarm_base_pose.position.x = message['pose']['position']['x']
-            swarm_base_pose.position.y = message['pose']['position']['y']
-            swarm_base_pose.position.z = message['pose']['position']['z']
-            swarm_base_pose.orientation.x = message['pose']['orientation']['x']
-            swarm_base_pose.orientation.y = message['pose']['orientation']['y']
-            swarm_base_pose.orientation.z = message['pose']['orientation']['z']
-            swarm_base_pose.orientation.w = message['pose']['orientation']['w']
+        self.__swarm_base_pose.position.x = message['pose']['position']['x']
+        self.__swarm_base_pose.position.y = message['pose']['position']['y']
+        self.__swarm_base_pose.position.z = message['pose']['position']['z']
+        self.__swarm_base_pose.orientation.x = message['pose']['orientation']['x']
+        self.__swarm_base_pose.orientation.y = message['pose']['orientation']['y']
+        self.__swarm_base_pose.orientation.z = message['pose']['orientation']['z']
+        self.__swarm_base_pose.orientation.w = message['pose']['orientation']['w']
 
-            target_pose = PoseStamped()
-            target_pose.header.stamp = ros.Time.now()
-            target_pose.header.frame_id = 'map'
-            target_pose.pose = posemath.toMsg(swarm_base_pose*self.__swarm_trans[self.__current_command])
-            self.__move_base_pub.publish(target_pose)
+        p = posemath.fromMsg(self.__swarm_base_pose)
+
+        self.__target_pose.header.stamp = rospy.Time.now()
+        self.__target_pose.header.frame_id = 'map'
+        self.__target_pose.pose = posemath.toMsg(p*self.__swarm_trans[self.__current_command])
+        self.__move_base_pub.publish(self.__target_pose)
 
     def __start_sending(self):
         rospy.loginfo('start sending')
@@ -81,8 +96,9 @@ class SwarmClient():
                 pose_msg['orientation'] = {'x':orient[0], 'y':orient[1], 'z':orient[2], 'w':orient[3]}
 
                 heartbeat_msg = {}
-                heartbeat_msg['header']['stamp'] = ros.Time.now()
-                heartbeat_msg['header']['header'] = self.__robot_name
+                heartbeat_msg['header'] = {}
+                heartbeat_msg['header']['stamp'] = rospy.Time.now()
+                heartbeat_msg['header']['frame_id'] = self.__robot_name
                 heartbeat_msg['state'] = self.__current_command
                 heartbeat_msg['pose'] = pose_msg
 
@@ -90,7 +106,7 @@ class SwarmClient():
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
                 rospy.logwarn('tf 1error, %s' % e)
 
-            rospy.loginfo('Swarm State: command %s', self.__swarm_command)
+            # rospy.loginfo('Swarm State: command %s', self.__current_command)
             rate.sleep()
 
     def __start_receiving(self):
@@ -98,7 +114,7 @@ class SwarmClient():
         self.__swarm_command.subscribe(self.__command_callback)
 
     def run(self):
-        self.__ros_client.run()
+        pass
 
     def close(self):
         self.__swarm_command.unsubscribe()
@@ -109,8 +125,9 @@ def main():
 
     swarm_client = SwarmClient()
 
+    r = rospy.Rate(10)
     while not rospy.is_shutdown():
-        swarm_client.run()
+        r.sleep()
 
     rospy.loginfo('shutdown....')
     swarm_client.close()

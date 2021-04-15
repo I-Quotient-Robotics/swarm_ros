@@ -3,16 +3,10 @@
   <arg name="log_type" default="screen"/>
 
   <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch" > 
-     <arg name="log_type" value="$(arg log_type)"/>
+     <arg name="port" value="9090"/>
   </include>
 
-  <node pkg="joy" type="joy_node" name="joy_node" output="$(arg log_type)">
-    <param name="dev" type="string" value="/dev/input/js1" />
-    <param name="autorepeat_rate" type="double" value="10" />
-  </node>
-
-  <rosparam command="load" file="$(find swarm_center)/config/joy_teleop.yaml" />
-  <node pkg="joy_teleop" type="joy_teleop.py" name="joy_teleop_node" output="$(arg log_type)" >
-    <remap from="cmd_vel" to="yocs_cmd_vel_mux/input/joy_cmd"/>
+  <node pkg="swarm_center" type="swarm_center.py" name="swarm_center_node" output="$(arg log_type)">
+    <param name="frame_id" type="string" value="base_footprint" />
   </node>
 </launch>
