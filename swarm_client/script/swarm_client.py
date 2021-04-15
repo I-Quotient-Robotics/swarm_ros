@@ -8,14 +8,14 @@ import rospy
 import roslibpy
 from tf_conversions import posemath
 
-from geometry_msgs.msg import Pose, PoseStamped
+from geometry_msgs.msg import Twist, Pose, PoseStamped
 from move_base_msgs.msg import MoveBaseGoal, MoveBaseFeedback, MoveBaseAction
 
 class SwarmClient():
     def __init__(self):
         # base robot ip and port
         self.__base_port = rospy.get_param('~base_port', 9090)
-        self.__base_ip = rospy.get_param('~base_address', '192.168.31.16')
+        self.__base_ip = rospy.get_param('~base_address', 'scout-mini-02.local')
 
         # robot name, each robot should have different name
         self.__robot_name = rospy.get_param('~robot_name', 'scout-mini-02')
@@ -28,11 +28,15 @@ class SwarmClient():
 
         self.__ros_client = roslibpy.Ros(self.__base_ip, self.__base_port)
 
+        self.__joy_command = roslibpy.Topic(self.__ros_client, 'yocs_cmd_vel_mux/input/joy_cmd', 'geometry_msgs/Twist')
         self.__swarm_command = roslibpy.Topic(self.__ros_client, 'swarm_command', 'swarm_msgs/SwarmCommand')
         self.__swarm_heartbeat = roslibpy.Topic(self.__ros_client, 'swarm_hearbeat', 'swarm_msgs/SwarmHeartbeat')
 
         # self.__move_base_pub = rospy.Publisher('swarm_goal', PoseStamped, queue_size=30)
         self.__move_base_pub = rospy.Publisher('move_base_simple/goal', PoseStamped, queue_size=30)
+
+        self.__cmd_pub = rospy.Publisher('yocs_cmd_vel_mux/input/navigation_cmd', Twist, queue_size=30)
+        # self.__cmd_pub = rospy.Publisher('test_cmd', Twist, queue_size=30)
 
         self.__target_pose = PoseStamped()
         self.__swarm_base_pose = Pose()
@@ -60,9 +64,21 @@ class SwarmClient():
 
         rospy.loginfo("get %d swarm type: %s", len(type_list), type_list)
 
+    def __joy_callback(self, message):
+        cmd = Twist()
+        cmd.linear.x = message['linear']['x']
+        cmd.linear.y = message['linear']['y']
+        cmd.linear.z = message['linear']['z']
+        cmd.angular.x = message['angular']['x']
+        cmd.angular.y = message['angular']['y']
+        cmd.angular.z = message['angular']['z']
+
+        if self.__current_command == 'joy':
+            self.__cmd_pub.publish(cmd)
+
     def __command_callback(self, message):
         if not self.__swarm_trans.has_key(message['command']):
-            if message['command'] != 'dismiss':
+            if message['command'] != 'dismiss' and message['command'] != 'joy':
                 rospy.logwarn('unknown command type %s', message['command'])
                 return
 
@@ -81,7 +97,7 @@ class SwarmClient():
         self.__target_pose.header.stamp = rospy.Time.now()
         self.__target_pose.header.frame_id = 'map'
         self.__target_pose.pose = posemath.toMsg(p*self.__swarm_trans[self.__current_command])
-        self.__move_base_pub.publish(self.__target_pose)
+        # self.__move_base_pub.publish(self.__target_pose)
 
     def __start_sending(self):
         rospy.loginfo('start sending')
@@ -111,6 +127,7 @@ class SwarmClient():
 
     def __start_receiving(self):
         rospy.loginfo('start receiving')
+        self.__joy_command.subscribe(self.__joy_callback)
         self.__swarm_command.subscribe(self.__command_callback)
 
     def run(self):
